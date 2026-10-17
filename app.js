@@ -1,5 +1,5 @@
 "use strict";
-/* Ciba Édition : interface du site. Toutes les données viennent du serveur (/api). */
+/* Ciboo : interface du site. Toutes les données viennent du serveur (/api). */
 const $ = i => document.getElementById(i),
   esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";"),
   fmt = n => Number(n || 0).toLocaleString("fr-FR") + " FCFA",
