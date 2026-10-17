@@ -211,7 +211,7 @@ const file = n => fs.readFileSync(path.join(__dirname, n));
 addAsset("/", file("index.html"), "text/html; charset=utf-8");
 addAsset("/app.js", file("app.js"), "text/javascript; charset=utf-8");
 addAsset("/sw.js", file("sw.js"), "text/javascript; charset=utf-8");
-addAsset("/manifest.webmanifest", Buffer.from(JSON.stringify({ name: "Ciba Édition", short_name: "Ciba", lang: "fr", start_url: "/", scope: "/", display: "standalone", background_color: "#fbf7ef", theme_color: "#7a2e1d", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] })), "application/manifest+json");
+addAsset("/manifest.webmanifest", Buffer.from(JSON.stringify({ name: "Ciboo", short_name: "Ciboo", lang: "fr", start_url: "/", scope: "/", display: "standalone", background_color: "#fbf7ef", theme_color: "#7a2e1d", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] })), "application/manifest+json");
 addAsset("/icon-192.png", Buffer.from(ICON192, "base64"), "image/png", "public, max-age=86400");
 addAsset("/icon-512.png", Buffer.from(ICON512, "base64"), "image/png", "public, max-age=86400");
 ASSETS["/favicon.ico"] = ASSETS["/icon-192.png"];
