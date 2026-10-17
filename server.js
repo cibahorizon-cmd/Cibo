@@ -1,5 +1,5 @@
 "use strict";
-/* Ciba Édition : serveur unique (site + API + base SQLite).
+/* Ciboo : serveur unique (site + API + base SQLite).
    Aucune dépendance npm. Node.js 22.13 ou plus récent. */
 const http = require("node:http"), fs = require("node:fs"), os = require("node:os"), path = require("node:path"),
   crypto = require("node:crypto"), zlib = require("node:zlib");
