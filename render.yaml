@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ciba-edition
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_DIR
+        value: /var/data
+      - key: PERSISTENT_DATA
+        value: "1"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+    disk:
+      name: ciba-data
+      mountPath: /var/data
+      sizeGB: 1
