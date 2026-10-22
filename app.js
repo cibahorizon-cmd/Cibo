@@ -47,7 +47,7 @@ function view(v) {
 }
 
 /* ---------- Catalogue ---------- */
-const FIL = [["all", "Tous"], ["free", "Gratuits à lire"], ["paid", "Numériques payants"], ["phys", "Livres physiques"], ["Guide", "Guides"], ["Manuel de formation", "Manuels de formation"], ["Roman", "Romans"], ["Pack", "Packs"]];
+const FIL = [["all", "Tous"], ["free", "Gratuits à lire"], ["paid", "Numériques payants"], ["phys", "Livres physiques"], ["Guide", "Guides"], ["Manuel de formation", "Manuels de formation"], ["Roman", "Romans"], ["développement personnel", "développement personnel"]];
 $("chips").innerHTML = FIL.map(f => `<button class="chip${f[0] === "all" ? " on" : ""}" data-f="${esc(f[0])}">${f[1]}</button>`).join("");
 $("chips").onclick = e => { if (e.target.dataset.f) { S.flt = e.target.dataset.f; $("chips").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === e.target)); grid(); } };
 $("s").oninput = e => { S.q = e.target.value; grid(); };
