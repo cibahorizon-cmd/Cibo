@@ -5,7 +5,7 @@ const $ = i => document.getElementById(i),
   fmt = n => Number(n || 0).toLocaleString("fr-FR") + " FCFA",
   dfr = t => new Date(t).toLocaleDateString("fr-FR");
 const S = { u: null, B: [], cfg: { zones: [], wave: "", om: "" }, flt: "all", q: "", fltA: "all", qA: "", off: false };
-const CATS = ["Roman", "Guide", "Manuel de formation", "Poésie", "Contes"],
+const CATS = ["Roman", "Guide", "Manuel de formation", "développement personnel", "Autres"],
   ARC = [["Religion et spiritualité", "Religion", "الدين والروحانيات"], ["Langue arabe", "Langue arabe", "اللغة العربية"], ["Histoire et civilisation", "Histoire", "التاريخ والحضارة"], ["Littérature et poésie", "Littérature", "الأدب والشعر"], ["Sciences et savoirs", "Sciences", "العلوم والمعارف"], ["Enfants et contes", "Enfants", "الأطفال والقصص"], ["Éducation et formation", "Éducation", "التعليم والتكوين"]],
   AR = Object.fromEntries(ARC.map(c => [c[0], c[2]])),
   catOpts = (sel, lang) => lang === "ar" ? ARC.map(c => `<option value="${esc(c[0])}"${c[0] === sel ? " selected" : ""}>${c[2]} · ${c[1]}</option>`).join("") : CATS.map(k => `<option${k === sel ? " selected" : ""}>${esc(k)}</option>`).join(""),
