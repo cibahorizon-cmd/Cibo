@@ -1,13 +1,14 @@
 {
-  "name": "ciba-edition",
+  "name": "ciboo",
   "version": "1.0.0",
   "private": true,
-  "description": "Boutique Ciba Édition : site, comptes, livres à lire en ligne, commandes et paiements à valider",
+  "description": "Boutique CIBOO : site, comptes, livres à lire en ligne, commandes et paiements à valider",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "totp": "node server.js --totp",
-    "test": "node test.js"
+    "test": "node test.js",
+    "test:supabase": "node test-supabase.js"
   },
   "engines": { "node": ">=22.13.0 <25" }
 }

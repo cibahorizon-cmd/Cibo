@@ -3,9 +3,9 @@
    Utilisation : npm test */
 const { spawn } = require("node:child_process"), fs = require("node:fs"), os = require("node:os"), path = require("node:path"), assert = require("node:assert/strict");
 const PORT = 3900 + Math.floor(Math.random() * 90), BASE = "http://127.0.0.1:" + PORT;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ciba-test-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ciboo-test-"));
 const TOTP = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"; // secret de test (RFC 6238)
-const env = { ...process.env, PORT: String(PORT), DATA_DIR: dir, PERSISTENT_DATA: "1", SESSION_SECRET: "test-secret-test-secret-1234", ADMIN_EMAIL: "admin@ciba.sn", ADMIN_PASSWORD: "MotDePasseAdmin1", ADMIN_TOTP_SECRET: TOTP };
+const env = { ...process.env, PORT: String(PORT), DATA_DIR: dir, PERSISTENT_DATA: "1", SESSION_SECRET: "test-secret-test-secret-1234", ADMIN_EMAIL: "admin@ciboo.sn", ADMIN_PASSWORD: "MotDePasseAdmin1", ADMIN_TOTP_SECRET: TOTP };
 const srv = spawn(process.execPath, [path.join(__dirname, "server.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
 let log = ""; srv.stdout.on("data", d => log += d); srv.stderr.on("data", d => log += d);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -25,10 +25,10 @@ let n = 0; const ok = (name, fn) => fn().then(() => { n++; console.log("  ✔ " 
   for (let i = 0; i < 60; i++) { try { if ((await fetch(BASE + "/health")).ok) break; } catch { } await sleep(250); if (i === 59) throw new Error("Le serveur n'a pas démarré :\n" + log); }
   const anon = new Client(), awa = new Client(), bob = new Client(), adm = new Client();
   const { totp } = require("./totp");
-  console.log("Tests Ciba Édition");
+  console.log("Tests CIBOO");
   await ok("code TOTP conforme à la norme RFC 6238", async () => assert.equal(totp(TOTP, 59000), "287082"));
   await ok("page d'accueil, application, icône et santé", async () => {
-    const h = await anon.get("/"); assert.equal(h.status, 200); assert.match(h.text, /Ciba Édition/); assert.match(h.headers.get("content-security-policy"), /script-src 'self'/);
+    const h = await anon.get("/"); assert.equal(h.status, 200); assert.match(h.text, /CIBOO/); assert.match(h.headers.get("content-security-policy"), /script-src 'self'/);
     assert.equal((await anon.get("/app.js")).status, 200); assert.equal((await anon.get("/sw.js")).status, 200); assert.equal((await anon.get("/icon-192.png")).status, 200);
     assert.equal((await anon.get("/manifest.webmanifest")).status, 200); assert.equal((await anon.get("/health")).text, "ok");
     assert.equal((await anon.get("/inconnu")).status, 404); assert.equal((await anon.get("/../server.js")).status, 404);
@@ -49,14 +49,14 @@ let n = 0; const ok = (name, fn) => fn().then(() => { n++; console.log("  ✔ " 
     assert.equal((await anon.get(`/api/books/${paid}/offline`)).status, 401);
   });
   await ok("inscription, connexion, session, refus des erreurs", async () => {
-    assert.equal((await awa.post("/api/signup", { email: "awa@ciba.sn", name: "Awa", password: "court" })).status, 400);
-    const s = await awa.post("/api/signup", { email: "Awa@Ciba.sn", name: "Awa", password: "motdepasse1" }); assert.equal(s.status, 200); assert.equal(s.json.user.email, "awa@ciba.sn");
+    assert.equal((await awa.post("/api/signup", { email: "awa@ciboo.sn", name: "Awa", password: "court" })).status, 400);
+    const s = await awa.post("/api/signup", { email: "Awa@Ciboo.sn", name: "Awa", password: "motdepasse1" }); assert.equal(s.status, 200); assert.equal(s.json.user.email, "awa@ciboo.sn");
     assert.equal((await awa.get("/api/me")).json.user.name, "Awa");
-    assert.equal((await bob.post("/api/signup", { email: "awa@ciba.sn", name: "Xavier", password: "motdepasse1" })).status, 409);
-    assert.equal((await bob.post("/api/signup", { email: "bob@ciba.sn", name: "Bob", password: "motdepasse2" })).status, 200);
+    assert.equal((await bob.post("/api/signup", { email: "awa@ciboo.sn", name: "Xavier", password: "motdepasse1" })).status, 409);
+    assert.equal((await bob.post("/api/signup", { email: "bob@ciboo.sn", name: "Bob", password: "motdepasse2" })).status, 200);
     await awa.post("/api/logout"); assert.equal((await awa.get("/api/me")).json.user, null);
-    assert.equal((await awa.post("/api/login", { email: "awa@ciba.sn", password: "mauvais" })).status, 401);
-    assert.equal((await awa.post("/api/login", { email: "awa@ciba.sn", password: "motdepasse1" })).status, 200);
+    assert.equal((await awa.post("/api/login", { email: "awa@ciboo.sn", password: "mauvais" })).status, 401);
+    assert.equal((await awa.post("/api/login", { email: "awa@ciboo.sn", password: "motdepasse1" })).status, 200);
   });
   await ok("protection : requêtes sans en-tête ou d'une autre origine refusées", async () => {
     const r = await fetch(BASE + "/api/logout", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }); assert.equal(r.status, 403);
@@ -64,9 +64,9 @@ let n = 0; const ok = (name, fn) => fn().then(() => { n++; console.log("  ✔ " 
     assert.equal((await anon.get("/api/admin/summary")).status, 401); assert.equal((await awa.get("/api/admin/summary")).status, 403);
   });
   await ok("administrateur : mot de passe, puis code à deux facteurs", async () => {
-    const a = await adm.post("/api/login", { email: "admin@ciba.sn", password: "MotDePasseAdmin1" }); assert.equal(a.status, 401); assert.equal(a.json.needCode, true);
-    assert.equal((await adm.post("/api/login", { email: "admin@ciba.sn", password: "MotDePasseAdmin1", code: "000000" })).status, 401);
-    const code = totp(TOTP, Date.now()); const b = await adm.post("/api/login", { email: "admin@ciba.sn", password: "MotDePasseAdmin1", code });
+    const a = await adm.post("/api/login", { email: "admin@ciboo.sn", password: "MotDePasseAdmin1" }); assert.equal(a.status, 401); assert.equal(a.json.needCode, true);
+    assert.equal((await adm.post("/api/login", { email: "admin@ciboo.sn", password: "MotDePasseAdmin1", code: "000000" })).status, 401);
+    const code = totp(TOTP, Date.now()); const b = await adm.post("/api/login", { email: "admin@ciboo.sn", password: "MotDePasseAdmin1", code });
     assert.equal(b.status, 200); assert.equal(b.json.user.role, "admin"); assert.equal((await adm.get("/api/admin/summary")).status, 200);
   });
   const paid = () => id("Guide du jeune entrepreneur");
@@ -110,8 +110,8 @@ let n = 0; const ok = (name, fn) => fn().then(() => { n++; console.log("  ✔ " 
     const cfg = (await anon.get("/api/config")).json, dakar = cfg.zones.find(z => z.name === "Dakar").id, bk = id("Le baobab et la lune");
     const bad = [{ items: [], name: "A B", phone: "771234567", address: "Rue 1 Dakar", zoneId: dakar }, { items: [{ id: paid(), q: 1 }], name: "A B", phone: "771234567", address: "Rue 1 Dakar", zoneId: dakar }, { items: [{ id: bk, q: 99 }], name: "A B", phone: "771234567", address: "Rue 1 Dakar", zoneId: dakar }, { items: [{ id: bk, q: 1 }], name: "A B", phone: "12", address: "Rue 1 Dakar", zoneId: dakar }, { items: [{ id: bk, q: 1 }], name: "A B", phone: "771234567", address: "Rue 1 Dakar", zoneId: dakar, promo: "FAUX" }];
     for (const b of bad) assert.ok([400, 409].includes((await anon.post("/api/orders", b)).status));
-    const r = await awa.post("/api/orders", { items: [{ id: bk, q: 2 }], name: "Awa Ndiaye", phone: "77 123 45 67", address: "Medina, Rue 10", zoneId: dakar, promo: "ciba10" });
-    assert.equal(r.status, 200); assert.equal(r.json.total, 13000 - 1300 + 1500); assert.match(r.json.ref, /^CIBA-\d{5}$/);
+    const r = await awa.post("/api/orders", { items: [{ id: bk, q: 2 }], name: "Awa Ndiaye", phone: "77 123 45 67", address: "Medina, Rue 10", zoneId: dakar, promo: "ciboo10" });
+    assert.equal(r.status, 200); assert.equal(r.json.total, 13000 - 1300 + 1500); assert.match(r.json.ref, /^CIBOO-\d{5}$/);
     const after = (await anon.get("/api/books")).json.books.find(b => b.id === bk); assert.equal(after.s, 18, "stock réduit");
     const mine = (await awa.get("/api/orders/mine")).json.orders; assert.equal(mine.length, 1); assert.equal(mine[0].status, "En préparation");
     assert.equal((await adm.put(`/api/admin/orders/${r.json.ref}`, { status: "Expédiée", driver: "Moussa", tracking: "SUIVI-1" })).status, 200);
@@ -196,6 +196,12 @@ let n = 0; const ok = (name, fn) => fn().then(() => { n++; console.log("  ✔ " 
     assert.equal((await anon.get(`/cover/${a.id}`)).status, 200);
     for (const x of [a.id, b.id, c2.id]) await adm.del(`/api/admin/books/${x}`);
   });
+  await ok("anciennes références de commande (CIBA-…) toujours gérables, nouvelles en CIBOO-…", async () => {
+    const { DatabaseSync } = require("node:sqlite"), d2 = new DatabaseSync(path.join(dir, "ciboo.db"));
+    d2.prepare("INSERT INTO orders(ref,name,phone,address,zone,items,subtotal,discount,delivery,total,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("CIBA-12345", "Ancien client", "771234567", "Medina", "Dakar", "[]", 1000, 0, 1500, 2500, Date.now()); d2.close();
+    assert.equal((await adm.put("/api/admin/orders/CIBA-12345", { status: "Expédiée" })).status, 200);
+    assert.equal((await adm.put("/api/admin/orders/CIBOO-99999", { status: "Expédiée" })).status, 404);
+  });
   await ok("livraison, codes promo, numéros de paiement", async () => {
     const z = await adm.post("/api/admin/zones", { name: "Saint-Louis", fee: 3000 }); assert.equal(z.status, 200);
     assert.equal((await adm.put(`/api/admin/zones/${z.json.id}`, { fee: 3200 })).status, 200);
@@ -219,23 +225,23 @@ let n = 0; const ok = (name, fn) => fn().then(() => { n++; console.log("  ✔ " 
     assert.equal((await awa.post("/api/me/password", { old: "faux", password: "nouveaumdp1" })).status, 401);
     assert.equal((await awa.post("/api/me/password", { old: "motdepasse1", password: "court" })).status, 400);
     assert.equal((await awa.post("/api/me/password", { old: "motdepasse1", password: "nouveaumdp1" })).status, 200);
-    const c2 = new Client(); assert.equal((await c2.post("/api/login", { email: "awa@ciba.sn", password: "motdepasse1" })).status, 401);
-    assert.equal((await c2.post("/api/login", { email: "awa@ciba.sn", password: "nouveaumdp1" })).status, 200);
-    const u = (await adm.get("/api/admin/users")).json.users.find(x => x.email === "awa@ciba.sn");
+    const c2 = new Client(); assert.equal((await c2.post("/api/login", { email: "awa@ciboo.sn", password: "motdepasse1" })).status, 401);
+    assert.equal((await c2.post("/api/login", { email: "awa@ciboo.sn", password: "nouveaumdp1" })).status, 200);
+    const u = (await adm.get("/api/admin/users")).json.users.find(x => x.email === "awa@ciboo.sn");
     assert.equal((await awa.post(`/api/admin/users/${u.id}/reset`)).status, 403);
     const r = await adm.post(`/api/admin/users/${u.id}/reset`); assert.equal(r.status, 200); assert.ok(r.json.password.length >= 9);
-    const c3 = new Client(); assert.equal((await c3.post("/api/login", { email: "awa@ciba.sn", password: r.json.password })).status, 200);
+    const c3 = new Client(); assert.equal((await c3.post("/api/login", { email: "awa@ciboo.sn", password: r.json.password })).status, 200);
     assert.equal((await c3.post("/api/me/password", { old: r.json.password, password: "motdepasse1" })).status, 200);
   });
   await ok("suppression d'un compte client", async () => {
     assert.equal((await bob.post("/api/me/delete", { password: "faux" })).status, 401);
     assert.equal((await bob.post("/api/me/delete", { password: "motdepasse2" })).status, 200);
-    assert.equal((await bob.post("/api/login", { email: "bob@ciba.sn", password: "motdepasse2" })).status, 401);
+    assert.equal((await bob.post("/api/login", { email: "bob@ciboo.sn", password: "motdepasse2" })).status, 401);
     assert.equal((await adm.post("/api/me/delete", { password: "MotDePasseAdmin1" })).status, 403);
   });
   await ok("verrouillage après plusieurs mots de passe faux", async () => {
-    const c = new Client(); for (let i = 0; i < 5; i++) await c.post("/api/login", { email: "awa@ciba.sn", password: "faux" + i });
-    assert.equal((await c.post("/api/login", { email: "awa@ciba.sn", password: "motdepasse1" })).status, 429);
+    const c = new Client(); for (let i = 0; i < 5; i++) await c.post("/api/login", { email: "awa@ciboo.sn", password: "faux" + i });
+    assert.equal((await c.post("/api/login", { email: "awa@ciboo.sn", password: "motdepasse1" })).status, 429);
   });
   console.log(`\n${n} vérifications réussies.`);
 })().then(() => { srv.kill(); fs.rmSync(dir, { recursive: true, force: true }); process.exit(0); })

@@ -1,3 +1,7 @@
+# CIBOO : configuration Render.
+# Le nom du service ci-dessous (ciba-edition) détermine l'adresse .onrender.com.
+#  - Première mise en ligne : vous pouvez remplacer « ciba-edition » par « ciboo » avant de créer le service.
+#  - Service déjà créé : NE CHANGEZ PAS ce nom (ni celui du disque), sinon Render créerait un second service payant.
 services:
   - type: web
     name: ciba-edition
@@ -21,6 +25,8 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      # Sauvegarde Supabase (facultative) : ajoutez SUPABASE_URL et SUPABASE_SECRET_KEY dans Render, onglet Environment (voir LISEZ-MOI.md).
+      # Ne les écrivez JAMAIS dans ce fichier, qui est envoyé sur GitHub.
     disk:
       name: ciba-data
       mountPath: /var/data

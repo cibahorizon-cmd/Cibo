@@ -1,5 +1,5 @@
 "use strict";
-/* Ciboo : serveur unique (site + API + base SQLite).
+/* CIBOO : serveur unique (site + API + base SQLite).
    Aucune dépendance npm. Node.js 22.13 ou plus récent. */
 const http = require("node:http"), fs = require("node:fs"), os = require("node:os"), path = require("node:path"),
   crypto = require("node:crypto"), zlib = require("node:zlib");
@@ -8,7 +8,7 @@ const http = require("node:http"), fs = require("node:fs"), os = require("node:o
 const { b32enc, totp, totpOk } = require("./totp");
 if (process.argv.includes("--totp")) {
   const s = b32enc(crypto.randomBytes(20));
-  console.log("Secret TOTP : " + s + "\nAjoutez-le dans une application d'authentification (Google Authenticator, Aegis...) :\notpauth://totp/Ciba%20Edition:admin?secret=" + s + "&issuer=Ciba%20Edition\nPuis mettez ce secret dans la variable ADMIN_TOTP_SECRET sur Render.");
+  console.log("Secret TOTP : " + s + "\nAjoutez-le dans une application d'authentification (Google Authenticator, Aegis...) :\notpauth://totp/CIBOO:admin?secret=" + s + "&issuer=CIBOO\nPuis mettez ce secret dans la variable ADMIN_TOTP_SECRET sur Render.");
   process.exit(0);
 }
 
@@ -18,13 +18,46 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const PERSISTENT = process.env.PERSISTENT_DATA === "1";
 const TOTP_SECRET = (process.env.ADMIN_TOTP_SECRET || "").replace(/\s/g, "");
 let SECRET = process.env.SESSION_SECRET;
-if (!SECRET || SECRET.length < 16) { SECRET = crypto.randomBytes(32).toString("hex"); console.warn("[ciba] SESSION_SECRET absent : les connexions seront réinitialisées à chaque redémarrage."); }
+if (!SECRET || SECRET.length < 16) { SECRET = crypto.randomBytes(32).toString("hex"); console.warn("[ciboo] SESSION_SECRET absent : les connexions seront réinitialisées à chaque redémarrage."); }
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+/* ---------- Sauvegarde Supabase (facultative) ----------
+   La base SQLite du disque reste la référence. Supabase garde des copies compressées dans un espace privé.
+   Si le disque est vide au démarrage (nouveau service, disque perdu), la dernière copie est remise automatiquement. */
+const SB = require("./supabase");
+const { spawnSync } = require("node:child_process");
+const DB_FILE = fs.existsSync(path.join(DATA_DIR, "ciba.db")) ? "ciba.db" : "ciboo.db";   // un site déjà en ligne garde son ancien fichier de données
+const DB_PATH = path.join(DATA_DIR, DB_FILE);
+let RESTORE_ERROR = "", RESTORED = "";
+const BK = {
+  seq: 0, saved: 0, timer: null, busy: false, lastTry: 0, lastOk: "", bytes: 0, counts: null, error: "", conflict: null, bucketOk: false, noFinal: false,
+  debounce: +process.env.BACKUP_DEBOUNCE_MS || 60000, minGap: +process.env.BACKUP_MIN_INTERVAL_MS || 300000, keep: 14
+};
+function prepareDb() {
+  const rf = DB_PATH + ".restore";
+  if (fs.existsSync(rf)) {                              // restauration demandée par l'administrateur avant l'arrêt du service
+    try {
+      if (fs.existsSync(DB_PATH)) fs.renameSync(DB_PATH, DB_PATH + ".avant-restauration");
+      for (const s of ["-wal", "-shm"]) fs.rmSync(DB_PATH + s, { force: true });
+      fs.renameSync(rf, DB_PATH); RESTORED = "Sauvegarde Supabase restaurée à la demande de l'administrateur.";
+      console.log("[ciboo] " + RESTORED);
+    } catch (e) { RESTORE_ERROR = "La restauration demandée n'a pas pu être appliquée : " + e.message; console.error("[ciboo] " + RESTORE_ERROR); }
+    return;
+  }
+  if (fs.existsSync(DB_PATH) || !SB.configured) { if (!SB.configured && SB.problem) console.warn("[ciboo] Supabase : " + SB.problem); return; }
+  console.log("[ciboo] Disque vide : recherche d'une sauvegarde Supabase…");
+  const r = spawnSync(process.execPath, [path.join(__dirname, "restore-supabase.js"), DB_PATH], { encoding: "utf8", timeout: 180000, env: process.env });
+  let o = {}; try { o = JSON.parse(String(r.stdout || "").trim().split("\n").pop() || "{}"); } catch { }
+  if (r.status === 0 && o.ok) { RESTORED = "Données remises automatiquement depuis la sauvegarde Supabase" + (o.at ? " du " + o.at.slice(0, 16).replace("T", " à ") + " (UTC)" : "") + "."; console.log("[ciboo] " + RESTORED); }
+  else if (r.status === 3) console.log("[ciboo] Aucune sauvegarde Supabase : premier démarrage.");
+  else { RESTORE_ERROR = "Le disque est vide mais la sauvegarde Supabase n'a pas pu être lue (" + (o.error || String(r.stderr || "").trim().slice(-200) || "erreur inconnue") + "). Pour ne pas écraser vos sauvegardes, les sauvegardes automatiques sont suspendues : ouvrez Administrateur, onglet Sauvegarde."; console.error("[ciboo] " + RESTORE_ERROR); }
+}
+prepareDb();
+
 const { DatabaseSync } = require("node:sqlite");
-const db = new DatabaseSync(path.join(DATA_DIR, "ciba.db"));
+const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
-const q = (s, ...p) => db.prepare(s).all(...p), q1 = (s, ...p) => db.prepare(s).get(...p), run = (s, ...p) => db.prepare(s).run(...p);
+const q = (s, ...p) => db.prepare(s).all(...p), q1 = (s, ...p) => db.prepare(s).get(...p), run = (s, ...p) => { const r = db.prepare(s).run(...p); markDirty(); return r; };
 function tx(fn) { db.exec("BEGIN IMMEDIATE"); try { const r = fn(); db.exec("COMMIT"); return r; } catch (e) { try { db.exec("ROLLBACK"); } catch { } throw e; } }
 
 db.exec(`
@@ -48,13 +81,15 @@ CREATE INDEX IF NOT EXISTS ord_user ON orders(user_id);
   if (!cols.includes("toc")) db.exec("ALTER TABLE books ADD COLUMN toc TEXT");
   if (!cols.includes("words")) db.exec("ALTER TABLE books ADD COLUMN words INTEGER NOT NULL DEFAULT 0");
 }
-const CATS = ["Roman", "Guide", "Manuel de formation", "Autres", "développement personnel"];
+const CATS = ["Roman", "Guide", "Manuel de formation", "Poésie", "Contes"];
 const CATS_AR = ["Religion et spiritualité", "Langue arabe", "Histoire et civilisation", "Littérature et poésie", "Sciences et savoirs", "Enfants et contes", "Éducation et formation"];
 const catOk = (lang, cat) => (lang === "ar" ? CATS_AR : CATS).includes(cat);
 const DEF_WAVE = "77 000 00 00", DEF_OM = "77 000 00 01";
 const cfgGet = (k, d) => { const r = q1("SELECT v FROM config WHERE k=?", k); return r ? r.v : d; };
 const cfgSet = (k, v) => run("INSERT INTO config(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", k, v);
 const audit = (who, txt) => run("INSERT INTO audit(ts,who,txt) VALUES(?,?,?)", Date.now(), who, String(txt).slice(0, 300));
+if (!cfgGet("instance", "")) cfgSet("instance", crypto.randomUUID());     // identité de cette base : évite d'écraser les sauvegardes d'une autre
+if (RESTORED) audit("système", RESTORED);
 
 /* ---------- Découpage d'un livre en pages et chapitres ----------
    Une ligne qui commence par « # » (chapitre) ou « ## » (sous-titre) crée une entrée du sommaire.
@@ -122,9 +157,9 @@ function seed() {
       const r = run("INSERT INTO books(title,author,cat,kind,price,stock,pages,toc,words,created) VALUES(?,?,?,?,?,?,?,?,?,?)", t, a, c, k, p, k === "phys" ? 20 : 0, bk ? JSON.stringify(bk.pages) : null, bk ? JSON.stringify(bk.toc) : null, bk ? bk.words : 0, Date.now());
       ids[t] = Number(r.lastInsertRowid);
     }
-    run("INSERT INTO books(title,author,cat,kind,price,pack,created) VALUES(?,?,?,?,?,?,?)", "Pack Entrepreneur", "Ciba Édition", "Pack", "paid", 6500, JSON.stringify([ids["Guide du jeune entrepreneur"], ids["Comptabilité de base"]]), Date.now());
+    run("INSERT INTO books(title,author,cat,kind,price,pack,created) VALUES(?,?,?,?,?,?,?)", "Pack Entrepreneur", "CIBOO", "Pack", "paid", 6500, JSON.stringify([ids["Guide du jeune entrepreneur"], ids["Comptabilité de base"]]), Date.now());
     run("INSERT INTO zones(name,fee) VALUES(?,?)", "Dakar", 1500); run("INSERT INTO zones(name,fee) VALUES(?,?)", "Thiès, Mbour", 2500); run("INSERT INTO zones(name,fee) VALUES(?,?)", "Autres régions", 3500);
-    run("INSERT OR IGNORE INTO promos(code,percent) VALUES('CIBA10',10)"); run("INSERT OR IGNORE INTO promos(code,percent) VALUES('RENTREE15',15)");
+    run("INSERT OR IGNORE INTO promos(code,percent) VALUES('CIBOO10',10)"); run("INSERT OR IGNORE INTO promos(code,percent) VALUES('RENTREE15',15)");
     cfgSet("wave", DEF_WAVE); cfgSet("om", DEF_OM); cfgSet("seeded", "1");
   });
 }
@@ -155,20 +190,20 @@ const DUMMY = "s1$" + "00".repeat(16) + "$" + "00".repeat(64);
 const sign = s => crypto.createHmac("sha256", SECRET).update(s).digest("base64url");
 function mkSession(uid, ttl) { const p = Buffer.from(JSON.stringify({ u: uid, e: Date.now() + ttl })).toString("base64url"); return p + "." + sign(p); }
 function readSession(req) {
-  const m = /(?:^|;\s*)ciba_s=([^;]+)/.exec(req.headers.cookie || ""); if (!m) return null;
+  const m = /(?:^|;\s*)ciboo_s=([^;]+)/.exec(req.headers.cookie || ""); if (!m) return null;
   const [p, s] = m[1].split("."); if (!p || !s) return null;
   const e = sign(p); if (e.length !== s.length || !crypto.timingSafeEqual(Buffer.from(e), Buffer.from(s))) return null;
   try { const o = JSON.parse(Buffer.from(p, "base64url").toString()); return o.e > Date.now() ? o.u : null; } catch { return null; }
 }
 const isHttps = req => req.headers["x-forwarded-proto"] === "https" || !!req.socket.encrypted;
-const setCookie = (req, res, val, age) => res.setHeader("Set-Cookie", `ciba_s=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${isHttps(req) ? "; Secure" : ""}`);
+const setCookie = (req, res, val, age) => res.setHeader("Set-Cookie", `ciboo_s=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${isHttps(req) ? "; Secure" : ""}`);
 
 async function bootAdmin() {
   const em = (process.env.ADMIN_EMAIL || "").trim().toLowerCase(); let pw = process.env.ADMIN_PASSWORD || "";
-  if (!em) { if (!q1("SELECT id FROM users WHERE role='admin'")) console.warn("[ciba] ADMIN_EMAIL manquant : aucun administrateur n'existe."); return; }
-  if (pw && pw.length < 10) { console.error("[ciba] ADMIN_PASSWORD trop court (10 caractères minimum). Administrateur non créé ni mis à jour."); return; }
+  if (!em) { if (!q1("SELECT id FROM users WHERE role='admin'")) console.warn("[ciboo] ADMIN_EMAIL manquant : aucun administrateur n'existe."); return; }
+  if (pw && pw.length < 10) { console.error("[ciboo] ADMIN_PASSWORD trop court (10 caractères minimum). Administrateur non créé ni mis à jour."); return; }
   const ex = q1("SELECT id FROM users WHERE email=?", em);
-  if (!pw && !ex) { pw = crypto.randomBytes(9).toString("base64url"); console.log("[ciba] Mot de passe administrateur généré : " + pw + "   (définissez ADMIN_PASSWORD dans Render pour le choisir)"); }
+  if (!pw && !ex) { pw = crypto.randomBytes(9).toString("base64url"); console.log("[ciboo] Mot de passe administrateur généré : " + pw + "   (définissez ADMIN_PASSWORD dans Render pour le choisir)"); }
   if (pw) { const h = await hashPw(pw); if (ex) run("UPDATE users SET pw=?,role='admin' WHERE id=?", h, ex.id); else run("INSERT INTO users(email,name,pw,role,created) VALUES(?,?,?,'admin',?)", em, "Administrateur", h, Date.now()); }
 }
 
@@ -211,12 +246,12 @@ const file = n => fs.readFileSync(path.join(__dirname, n));
 addAsset("/", file("index.html"), "text/html; charset=utf-8");
 addAsset("/app.js", file("app.js"), "text/javascript; charset=utf-8");
 addAsset("/sw.js", file("sw.js"), "text/javascript; charset=utf-8");
-addAsset("/manifest.webmanifest", Buffer.from(JSON.stringify({ name: "Ciboo", short_name: "Ciboo", lang: "fr", start_url: "/", scope: "/", display: "standalone", background_color: "#fbf7ef", theme_color: "#7a2e1d", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] })), "application/manifest+json");
+addAsset("/manifest.webmanifest", Buffer.from(JSON.stringify({ name: "CIBOO", short_name: "CIBOO", lang: "fr", start_url: "/", scope: "/", display: "standalone", background_color: "#fbf7ef", theme_color: "#7a2e1d", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] })), "application/manifest+json");
 addAsset("/icon-192.png", Buffer.from(ICON192, "base64"), "image/png", "public, max-age=86400");
 addAsset("/icon-512.png", Buffer.from(ICON512, "base64"), "image/png", "public, max-age=86400");
 ASSETS["/favicon.ico"] = ASSETS["/icon-192.png"];
 try { for (const n of ["pdf.min.mjs", "pdf.worker.min.mjs"]) addAsset("/" + n, file(n), "text/javascript; charset=utf-8", "public, max-age=604800"); }
-catch (e) { console.warn("[ciba] Fichiers pdf.min.mjs / pdf.worker.min.mjs absents : l'envoi de livres PDF est désactivé."); }
+catch (e) { console.warn("[ciboo] Fichiers pdf.min.mjs / pdf.worker.min.mjs absents : l'envoi de livres PDF est désactivé."); }
 function sendAsset(req, res, a, p) {
   const gz = a.gz && /\bgzip\b/.test(req.headers["accept-encoding"] || ""), b = gz ? a.gz : a.buf;
   const h = { "Content-Type": a.type, "Cache-Control": a.cache, "Content-Length": b.length };
@@ -262,7 +297,7 @@ route("GET", "/api/books/(\\d+)/page/(\\d+)", {}, c => {
   const pages = JSON.parse(b.pages), ok = allowedToRead(b, c.u, owned);
   if (n >= pages.length) fail(404, "Page introuvable");
   if (!ok && n > 0) fail(403, "Achetez ce livre pour lire la suite.", { locked: true });
-  if (n === 0) run("UPDATE books SET reads=reads+1 WHERE id=?", b.id);
+  if (n === 0) db.prepare("UPDATE books SET reads=reads+1 WHERE id=?").run(b.id);     // compteur de lectures : ne déclenche pas de sauvegarde
   return { n, total: pages.length, text: ok ? pages[n] : pages[0].slice(0, 1500), preview: !ok, l: b.lang, wm: c.u ? c.u.email : "visiteur" };
 });
 route("GET", "/api/books/(\\d+)/toc", {}, c => {
@@ -365,7 +400,7 @@ route("POST", "/api/orders", {}, c => {
       items.push({ id, title: b.title, q: n, price: b.price }); sub += b.price * n;
     }
     const disc = Math.round(sub * pct / 100), total = sub - disc + zone.fee; let ref = "";
-    for (let i = 0; i < 20; i++) { ref = "CIBA-" + crypto.randomInt(10000, 100000); if (!q1("SELECT ref FROM orders WHERE ref=?", ref)) break; }
+    for (let i = 0; i < 20; i++) { ref = "CIBOO-" + crypto.randomInt(10000, 100000); if (!q1("SELECT ref FROM orders WHERE ref=?", ref)) break; }
     run("INSERT INTO orders(ref,user_id,name,phone,address,zone,items,subtotal,discount,delivery,total,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", ref, c.u ? c.u.id : null, name, phone, address, zone.name, JSON.stringify(items), sub, disc, zone.fee, total, Date.now());
     return { ref, total, discount: disc, code };
   });
@@ -400,6 +435,11 @@ route("GET", "/api/admin/summary", A, () => {
   if (!PERSISTENT) warn.push("Attention : les données ne sont pas conservées durablement sur ce service (pas de disque permanent). Elles seront perdues à chaque redémarrage.");
   if (cfgGet("wave", DEF_WAVE) === DEF_WAVE || cfgGet("om", DEF_OM) === DEF_OM) warn.push("Les numéros Wave et Orange Money sont encore des exemples : modifiez-les dans Livraison.");
   if (!TOTP_SECRET) warn.push("La double authentification administrateur n'est pas activée (variable ADMIN_TOTP_SECRET).");
+  if (RESTORE_ERROR) warn.push("⚠ " + RESTORE_ERROR);
+  else if (BK.conflict) warn.push("⚠ Une sauvegarde Supabase d'une AUTRE base existe déjà : les sauvegardes automatiques sont suspendues. Ouvrez l'onglet Sauvegarde pour choisir (restaurer ou remplacer).");
+  else if (SB.configured && BK.error) warn.push("⚠ La dernière sauvegarde Supabase a échoué : " + BK.error);
+  else if (SB.problem) warn.push("Supabase est mal réglé : " + SB.problem);
+  else if (!SB.configured) warn.push("Vos données ne sont pas copiées hors de ce service. Activez la sauvegarde Supabase (onglet Sauvegarde) pour ne rien perdre si le disque Render est remplacé.");
   if (q1("SELECT 1 x FROM books WHERE author LIKE '%exemple%' OR author LIKE '%مثال%' LIMIT 1")) warn.push("Des livres d'exemple sont encore au catalogue : retirez-les dans « Retirer un livre ».");
   return {
     books: n("SELECT COUNT(*) n FROM books WHERE pack IS NULL"), hidden: n("SELECT COUNT(*) n FROM books WHERE pack IS NULL AND hidden=1"),
@@ -470,7 +510,7 @@ route("POST", "/api/admin/payments/([A-Z0-9-]+)/(validate|reject)", A, c => {
 });
 const STATUSES = ["En préparation", "Expédiée", "Livrée", "Annulée"];
 route("GET", "/api/admin/orders", A, () => ({ orders: q("SELECT * FROM orders ORDER BY created DESC LIMIT 300").map(o => ({ ...o, items: JSON.parse(o.items) })) }));
-route("PUT", "/api/admin/orders/(CIBA-\\d+)", A, c => {
+route("PUT", "/api/admin/orders/(CIBOO-\\d+|CIBA-\\d+)", A, c => {
   tx(() => {
     const o = q1("SELECT * FROM orders WHERE ref=?", c.m[1]); if (!o) fail(404, "Commande introuvable");
     let st = o.status; if (c.b.status !== undefined) { if (!STATUSES.includes(c.b.status)) fail(400, "Statut invalide"); st = c.b.status; }
@@ -507,13 +547,127 @@ route("GET", "/api/admin/stats", A, () => ({
 const csv = rows => "\ufeff" + rows.map(r => r.map(x => { x = String(x == null ? "" : x); if (/^[=+\-@\t\r]/.test(x)) x = "'" + x; return '"' + x.replace(/"/g, '""') + '"'; }).join(";")).join("\r\n");
 function sendCsv(c, name, rows) { const b = Buffer.from(csv(rows)); c.res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${name}"`, "Content-Length": b.length, "Cache-Control": "no-store" }); c.res.end(b); c.sent = true; }
 const dt = t => t ? new Date(t).toISOString().slice(0, 10) : "";
-route("GET", "/api/admin/export/orders.csv", A, c => sendCsv(c, "commandes-ciba.csv", [["Référence", "Date", "Client", "Téléphone", "Adresse", "Zone", "Articles", "Total FCFA", "Statut", "Livreur", "Suivi"], ...q("SELECT * FROM orders ORDER BY created DESC").map(o => [o.ref, dt(o.created), o.name, o.phone, o.address, o.zone, JSON.parse(o.items).map(i => i.title + " x" + i.q).join(" ; "), o.total, o.status, o.driver, o.tracking])]));
-route("GET", "/api/admin/export/payments.csv", A, c => sendCsv(c, "paiements-ciba.csv", [["Référence", "Date", "Client", "E-mail", "Livre", "Montant FCFA", "Moyen", "Transaction", "Statut"], ...q("SELECT p.*,u.name,u.email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.created DESC").map(p => [p.id, dt(p.created), p.name, p.email, p.title, p.amount, p.method, p.tx, p.status])]));
+route("GET", "/api/admin/export/orders.csv", A, c => sendCsv(c, "commandes-ciboo.csv", [["Référence", "Date", "Client", "Téléphone", "Adresse", "Zone", "Articles", "Total FCFA", "Statut", "Livreur", "Suivi"], ...q("SELECT * FROM orders ORDER BY created DESC").map(o => [o.ref, dt(o.created), o.name, o.phone, o.address, o.zone, JSON.parse(o.items).map(i => i.title + " x" + i.q).join(" ; "), o.total, o.status, o.driver, o.tracking])]));
+route("GET", "/api/admin/export/payments.csv", A, c => sendCsv(c, "paiements-ciboo.csv", [["Référence", "Date", "Client", "E-mail", "Livre", "Montant FCFA", "Moyen", "Transaction", "Statut"], ...q("SELECT p.*,u.name,u.email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.created DESC").map(p => [p.id, dt(p.created), p.name, p.email, p.title, p.amount, p.method, p.tx, p.status])]));
 route("GET", "/api/admin/backup", A, c => {
-  const tmp = path.join(os.tmpdir(), "ciba-backup-" + crypto.randomBytes(6).toString("hex") + ".db");
+  const tmp = path.join(os.tmpdir(), "ciboo-backup-" + crypto.randomBytes(6).toString("hex") + ".db");
   db.exec("VACUUM INTO '" + tmp.replace(/'/g, "''") + "'");
   const b = fs.readFileSync(tmp); fs.unlinkSync(tmp); audit(who(c), "Sauvegarde téléchargée");
-  c.res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Disposition": `attachment; filename="ciba-sauvegarde-${dt(Date.now())}.db"`, "Content-Length": b.length, "Cache-Control": "no-store" }); c.res.end(b); c.sent = true;
+  c.res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Disposition": `attachment; filename="ciboo-sauvegarde-${dt(Date.now())}.db"`, "Content-Length": b.length, "Cache-Control": "no-store" }); c.res.end(b); c.sent = true;
+});
+
+/* ---------- Sauvegarde Supabase : copies, état, restauration ---------- */
+const { promisify } = require("node:util"), gzipP = promisify(zlib.gzip), gunzipP = promisify(zlib.gunzip);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const stamp = () => new Date().toISOString().slice(0, 23).replace(/[:.]/g, "-") + "Z";      // ex. 2026-10-31T11-41-02-123Z
+const bkErr = (kind, msg) => Object.assign(new Error(msg), { kind });
+const counts = () => ({ clients: q1("SELECT COUNT(*) n FROM users WHERE role='client'").n, livres: q1("SELECT COUNT(*) n FROM books WHERE pack IS NULL").n, paiements: q1("SELECT COUNT(*) n FROM payments").n, commandes: q1("SELECT COUNT(*) n FROM orders").n });
+function blocked() { return !!(RESTORE_ERROR || BK.conflict); }
+function markDirty() { BK.seq++; if (SB.configured && !BK.busy) schedule(); }          // appelée à chaque écriture dans la base
+function schedule(delay) {
+  if (BK.timer || !SB.configured || blocked() || BK.noFinal) return;
+  const wait = delay !== undefined ? delay : Math.max(BK.debounce, BK.lastTry + BK.minGap - Date.now());
+  BK.timer = setTimeout(() => { BK.timer = null; backupNow("automatique").catch(() => { }); }, wait); BK.timer.unref();
+}
+async function snapshot() {
+  const tmp = path.join(os.tmpdir(), "ciboo-snap-" + crypto.randomBytes(6).toString("hex") + ".db");
+  try {
+    db.exec("VACUUM INTO '" + tmp.replace(/'/g, "''") + "'");      // copie cohérente, même pendant que le site travaille
+    const cn = counts(), raw = await fs.promises.readFile(tmp);
+    return { gz: await gzipP(raw, { level: 6 }), raw: raw.length, counts: cn };
+  } finally { fs.rmSync(tmp, { force: true }); }
+}
+async function remoteMeta() { const b = await SB.get("latest.json"); if (!b) return null; try { return JSON.parse(b.toString()); } catch { return null; } }
+async function pruneRemote() {
+  const h = (await SB.list("history")).map(x => x.path).filter(p => /^history\/\d{4}-\d{2}-\d{2}\.db\.gz$/.test(p)).sort();
+  for (const p of h.slice(0, Math.max(0, h.length - BK.keep))) await SB.del(p);
+  const b = (await SB.list("before-restore")).map(x => x.path).filter(p => /^before-restore\/[\dT-]+Z\.db\.gz$/.test(p)).sort();
+  for (const p of b.slice(0, Math.max(0, b.length - 5))) await SB.del(p);
+}
+async function backupNow(reason, force = false) {
+  if (!SB.configured) throw bkErr("off", SB.problem || "Supabase n'est pas configuré (variables SUPABASE_URL et SUPABASE_SECRET_KEY).");
+  if (BK.busy) throw bkErr("busy", "Une sauvegarde est déjà en cours.");
+  if (RESTORE_ERROR && !force) throw bkErr("restore", RESTORE_ERROR);
+  BK.busy = true; BK.lastTry = Date.now(); if (BK.timer) { clearTimeout(BK.timer); BK.timer = null; }
+  try {
+    if (!BK.bucketOk) { await SB.ensureBucket(); BK.bucketOk = true; }
+    const mine = cfgGet("instance", ""), remote = await remoteMeta();
+    if (!force && remote && remote.instance && remote.instance !== mine) {
+      BK.conflict = { at: remote.at, counts: remote.counts };
+      throw bkErr("conflict", "Une sauvegarde d'une autre base existe déjà sur Supabase" + (remote.at ? " (du " + remote.at.slice(0, 10) + ")" : "") + ". Rien n'a été écrasé. Dans l'onglet Sauvegarde, choisissez de la restaurer ou de la remplacer.");
+    }
+    if (force && remote) { const old = await SB.get("latest.db.gz"); if (old) await SB.put("before-restore/" + stamp() + ".db.gz", old, "application/gzip"); }   // l'ancienne copie est gardée
+    const seq = BK.seq, s = await snapshot();
+    const at = new Date().toISOString(), meta = { at, instance: mine, bytes: s.gz.length, raw: s.raw, counts: s.counts, reason };
+    await SB.put("history/" + at.slice(0, 10) + ".db.gz", s.gz, "application/gzip");
+    await SB.put("latest.db.gz", s.gz, "application/gzip");
+    await SB.put("latest.json", Buffer.from(JSON.stringify(meta)), "application/json");     // écrit en dernier : il décrit la copie complète
+    BK.saved = seq; BK.lastOk = at; BK.bytes = s.gz.length; BK.counts = s.counts; BK.error = ""; BK.conflict = null; if (force) RESTORE_ERROR = "";
+    pruneRemote().catch(() => { });
+    return meta;
+  } catch (e) { BK.error = e.kind === "conflict" ? "" : e.message; throw e; }
+  finally { BK.busy = false; if (BK.seq !== BK.saved) schedule(); }
+}
+async function bootBackup() {
+  try { await SB.ensureBucket(); BK.bucketOk = true; if (!RESTORE_ERROR) await backupNow("démarrage"); }
+  catch (e) { if (!BK.error && e.kind !== "conflict") BK.error = e.message; console.error("[ciboo] Supabase : " + e.message); }
+}
+async function sbInfo() {
+  const o = { configured: SB.configured, problem: SB.problem, host: SB.host, bucket: SB.bucket, instance: cfgGet("instance", "").slice(0, 8), restoreError: RESTORE_ERROR, restored: RESTORED, busy: BK.busy, dirty: BK.seq !== BK.saved, lastOk: BK.lastOk, error: BK.error, conflict: BK.conflict, local: counts(), delayMin: Math.round(BK.debounce / 60000 * 10) / 10 };
+  if (SB.configured) {
+    try {
+      o.remote = await remoteMeta(); o.remoteSame = !!(o.remote && o.remote.instance === cfgGet("instance", ""));
+      o.history = (await SB.list("history")).filter(x => /\.db\.gz$/.test(x.name)).map(x => ({ file: x.path.replace(/\.db\.gz$/, ""), size: x.size, updated: x.updated })).sort((a, b) => b.file.localeCompare(a.file)).slice(0, BK.keep);
+      o.safety = (await SB.list("before-restore")).filter(x => /\.db\.gz$/.test(x.name)).map(x => ({ file: x.path.replace(/\.db\.gz$/, ""), size: x.size, updated: x.updated })).sort((a, b) => b.file.localeCompare(a.file)).slice(0, 5);
+    } catch (e) { o.remoteError = e.message; }
+  }
+  return o;
+}
+const idle = async () => { for (let k = 0; BK.busy && k < 150; k++) await sleep(200); };      // un clic ne doit pas échouer parce qu'une sauvegarde automatique est en cours
+const sbNeed = () => { if (!SB.configured) fail(400, SB.problem || "Supabase n'est pas configuré (variables SUPABASE_URL et SUPABASE_SECRET_KEY)."); };
+const bkFail = e => { if (e instanceof HttpError) throw e; throw new HttpError(["conflict", "restore", "busy"].includes(e.kind) ? 409 : e.kind === "off" ? 400 : 502, e.message); };
+route("GET", "/api/admin/supabase", A, () => sbInfo());
+route("POST", "/api/admin/supabase/test", A, async c => {
+  sbNeed();
+  try {
+    const b = await SB.ensureBucket(); BK.bucketOk = true;
+    await SB.put("test/ping.txt", Buffer.from("ok " + Date.now()), "text/plain");
+    const back = await SB.get("test/ping.txt"); await SB.del("test/ping.txt");
+    if (!back) throw new Error("L'écriture est acceptée mais la relecture a échoué.");
+    audit(who(c), "Test de connexion Supabase réussi"); return { ok: true, bucket: b };
+  } catch (e) { bkFail(e); }
+});
+route("POST", "/api/admin/supabase/backup", A, async c => {
+  sbNeed(); audit(who(c), "Sauvegarde Supabase demandée"); await idle();
+  try { const m = await backupNow("manuelle"); return { ok: true, at: m.at, bytes: m.bytes, counts: m.counts }; } catch (e) { bkFail(e); }
+});
+route("POST", "/api/admin/supabase/overwrite", A, async c => {
+  sbNeed(); if (c.b.confirm !== "REMPLACER") fail(400, "Confirmation manquante.");
+  audit(who(c), "Sauvegarde Supabase REMPLACÉE par la base actuelle"); await idle();
+  try { const m = await backupNow("remplacement", true); return { ok: true, at: m.at, bytes: m.bytes, counts: m.counts }; } catch (e) { bkFail(e); }
+});
+route("POST", "/api/admin/supabase/restore", A, async c => {
+  sbNeed(); if (c.b.confirm !== "RESTAURER") fail(400, "Confirmation manquante.");
+  const f = String(c.b.file || "latest"); let p;
+  if (f === "latest") p = "latest.db.gz"; else if (/^history\/\d{4}-\d{2}-\d{2}$/.test(f) || /^before-restore\/[\dT-]+Z$/.test(f)) p = f + ".db.gz"; else fail(400, "Sauvegarde inconnue.");
+  await idle(); if (BK.busy) fail(409, "Une sauvegarde est en cours, réessayez dans un instant.");
+  BK.busy = true; if (BK.timer) { clearTimeout(BK.timer); BK.timer = null; }
+  const tmp = DB_PATH + ".restore.tmp";
+  try {
+    let gz; try { gz = await SB.get(p); } catch (e) { bkFail(e); }
+    if (!gz) fail(404, "Cette sauvegarde n'existe plus sur Supabase.");
+    let raw; try { raw = await gunzipP(gz, { maxOutputLength: 1024 * 1024 * 1024 }); } catch { fail(400, "Sauvegarde illisible (fichier abîmé). Rien n'a changé."); }
+    fs.writeFileSync(tmp, raw);
+    try { SB.checkDb(tmp); } catch (e) { fail(400, "Sauvegarde refusée : " + e.message + ". Rien n'a changé."); }
+    const rm = await remoteMeta().catch(() => null), d = new DatabaseSync(tmp);       // la base restaurée prend l'identité des sauvegardes, pour que les suivantes ne soient pas bloquées
+    try { const cur = d.prepare("SELECT v FROM config WHERE k='instance'").get(); d.prepare("INSERT INTO config(k,v) VALUES('instance',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run((rm && rm.instance) || (cur && cur.v) || crypto.randomUUID()); } finally { d.close(); }
+    try { const s = await snapshot(); await SB.put("before-restore/" + stamp() + ".db.gz", s.gz, "application/gzip"); }      // copie de sécurité de l'état actuel
+    catch (e) { fail(502, "Impossible de garder une copie de sécurité de vos données actuelles (" + e.message + "). Restauration annulée : rien n'a changé."); }
+    fs.renameSync(tmp, DB_PATH + ".restore");
+  } catch (e) { fs.rmSync(tmp, { force: true }); BK.busy = false; throw e; }
+  BK.noFinal = true; console.log("[ciboo] Restauration Supabase préparée par " + who(c) + " : redémarrage du service.");
+  setTimeout(() => stop(), 800);
+  return { ok: true, restarting: true };
 });
 
 /* ---------- Serveur ---------- */
@@ -543,11 +697,25 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     if (res.headersSent) { try { res.end(); } catch { } return; }
     if (e instanceof HttpError) return json(res, e.code, { error: e.message, ...e.extra });
-    console.error("[ciba] erreur :", e); json(res, 500, { error: "Erreur du serveur. Réessayez." });
+    console.error("[ciboo] erreur :", e); json(res, 500, { error: "Erreur du serveur. Réessayez." });
   }
 });
 server.requestTimeout = 60000; server.headersTimeout = 20000;
-function stop() { server.close(() => { try { db.close(); } catch { } process.exit(0); }); setTimeout(() => process.exit(0), 8000).unref(); }
+async function stop() {
+  if (stop.on) return; stop.on = true;
+  setTimeout(() => process.exit(0), 25000).unref();
+  await Promise.race([new Promise(r => { server.close(r); if (server.closeIdleConnections) server.closeIdleConnections(); }), sleep(3000)]);
+  if (!BK.noFinal && SB.configured && BK.seq !== BK.saved && !blocked() && !BK.busy) { try { await Promise.race([backupNow("arrêt du service"), sleep(15000)]); } catch { } }   // dernière copie avant l'arrêt
+  try { db.close(); } catch { }
+  process.exit(0);
+}
 process.on("SIGTERM", stop); process.on("SIGINT", stop);
-process.on("unhandledRejection", e => console.error("[ciba] rejet non géré :", e));
-bootAdmin().then(() => server.listen(PORT, "0.0.0.0", () => console.log(`[ciba] prêt sur le port ${PORT} · données : ${DATA_DIR}${PERSISTENT ? "" : " (non permanentes)"}`))).catch(e => { console.error("[ciba] démarrage impossible :", e); process.exit(1); });
+process.on("unhandledRejection", e => console.error("[ciboo] rejet non géré :", e));
+bootAdmin().then(() => server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[ciboo] prêt sur le port ${PORT} · données : ${DATA_DIR}${PERSISTENT ? "" : " (non permanentes)"}`);
+  if (SB.configured) {
+    console.log(`[ciboo] Supabase activé : ${SB.host} · espace « ${SB.bucket} »`); bootBackup();
+    // Contact régulier avec Supabase : repère vite une panne (ou un projet gratuit mis en pause) et peut éviter la mise en pause pour inactivité.
+    setInterval(() => { if (BK.busy) return; SB.list("").then(() => { if (BK.error && !blocked()) backupNow("rattrapage").catch(() => { }); }).catch(e => { BK.error = e.message; }); }, +process.env.SUPABASE_PING_MS || 12 * 3600 * 1000).unref();
+  }
+})).catch(e => { console.error("[ciboo] démarrage impossible :", e); process.exit(1); });

@@ -1,11 +1,13 @@
 "use strict";
-/* Ciboo : interface du site. Toutes les données viennent du serveur (/api). */
+// Mise à jour depuis l'ancien nom : on reprend les réglages gardés sur l'appareil (panier, signets, réglages de lecture).
+try { for (const k of Object.keys(localStorage)) { const m = /^ciba([:-].*)$/.exec(k); if (m && localStorage.getItem("ciboo" + m[1]) == null) localStorage.setItem("ciboo" + m[1], localStorage.getItem(k)); } } catch { }
+/* CIBOO : interface du site. Toutes les données viennent du serveur (/api). */
 const $ = i => document.getElementById(i),
   esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";"),
   fmt = n => Number(n || 0).toLocaleString("fr-FR") + " FCFA",
   dfr = t => new Date(t).toLocaleDateString("fr-FR");
 const S = { u: null, B: [], cfg: { zones: [], wave: "", om: "" }, flt: "all", q: "", fltA: "all", qA: "", off: false };
-const CATS = ["Roman", "Guide", "Manuel de formation", "développement personnel", "Autres"],
+const CATS = ["Roman", "Guide", "Manuel de formation", "Poésie", "Contes"],
   ARC = [["Religion et spiritualité", "Religion", "الدين والروحانيات"], ["Langue arabe", "Langue arabe", "اللغة العربية"], ["Histoire et civilisation", "Histoire", "التاريخ والحضارة"], ["Littérature et poésie", "Littérature", "الأدب والشعر"], ["Sciences et savoirs", "Sciences", "العلوم والمعارف"], ["Enfants et contes", "Enfants", "الأطفال والقصص"], ["Éducation et formation", "Éducation", "التعليم والتكوين"]],
   AR = Object.fromEntries(ARC.map(c => [c[0], c[2]])),
   catOpts = (sel, lang) => lang === "ar" ? ARC.map(c => `<option value="${esc(c[0])}"${c[0] === sel ? " selected" : ""}>${c[2]} · ${c[1]}</option>`).join("") : CATS.map(k => `<option${k === sel ? " selected" : ""}>${esc(k)}</option>`).join(""),
@@ -24,10 +26,10 @@ async function api(p, o = {}) {
 const act = async f => { try { return await f(); } catch (e) { toast(e.message); return undefined; } };
 const lsg = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch { return d; } },
   lss = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
-let cart = lsg("ciba:cart", {});
+let cart = lsg("ciboo:cart", {});
 const cartN = () => Object.values(cart).reduce((a, b) => a + b, 0);
-const saveCart = () => { lss("ciba:cart", cart); nav(); };
-const rpKey = () => "ciba:rp:" + (S.u ? S.u.id : 0), RP = () => lsg(rpKey(), { last: {}, bk: {} });
+const saveCart = () => { lss("ciboo:cart", cart); nav(); };
+const rpKey = () => "ciboo:rp:" + (S.u ? S.u.id : 0), RP = () => lsg(rpKey(), { last: {}, bk: {} });
 
 /* ---------- Chargement ---------- */
 async function load() { const [m, b, c] = await Promise.all([api("/me"), api("/books"), api("/config")]); S.u = m.user; S.B = b.books; S.cfg = c; S.off = false; }
@@ -47,7 +49,7 @@ function view(v) {
 }
 
 /* ---------- Catalogue ---------- */
-const FIL = [["all", "Tous"], ["free", "Gratuits à lire"], ["paid", "Numériques payants"], ["phys", "Livres physiques"], ["Guide", "Guides"], ["Manuel de formation", "Manuels de formation"], ["Roman", "Romans"], ["développement personnel", "développement personnel"]];
+const FIL = [["all", "Tous"], ["free", "Gratuits à lire"], ["paid", "Numériques payants"], ["phys", "Livres physiques"], ["Guide", "Guides"], ["Manuel de formation", "Manuels de formation"], ["Roman", "Romans"], ["Pack", "Packs"]];
 $("chips").innerHTML = FIL.map(f => `<button class="chip${f[0] === "all" ? " on" : ""}" data-f="${esc(f[0])}">${f[1]}</button>`).join("");
 $("chips").onclick = e => { if (e.target.dataset.f) { S.flt = e.target.dataset.f; $("chips").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === e.target)); grid(); } };
 $("s").oninput = e => { S.q = e.target.value; grid(); };
@@ -121,14 +123,14 @@ $("pgo").onclick = async () => {
 
 /* ---------- Lecteur ---------- */
 let R = null, ST = "toc", spk = false;
-let RS = { fs: 19, ff: "serif", lh: 1.75, w: 680, th: "auto", jus: false, rate: 1, auto: false, ...lsg("ciba:reader", {}) };
-const saveRS = () => lss("ciba:reader", RS);
+let RS = { fs: 19, ff: "serif", lh: 1.75, w: 680, th: "auto", jus: false, rate: 1, auto: false, ...lsg("ciboo:reader", {}) };
+const saveRS = () => lss("ciboo:reader", RS);
 function applyPrefs() {
   const r = $("rd"); r.style.setProperty("--rfs", RS.fs + "px"); r.style.setProperty("--rlh", RS.lh); r.style.setProperty("--rw", RS.w + "px");
   r.classList.remove("th-light", "th-sepia", "th-dark", "ff-sans", "jus");
   if (RS.th !== "auto") r.classList.add("th-" + RS.th); if (RS.ff === "sans") r.classList.add("ff-sans"); if (RS.jus) r.classList.add("jus");
 }
-function wmk() { const t = (R && R.wm || "visiteur") + " · Ciba Édition"; $("wm").style.backgroundImage = 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27300%27 height=%27170%27%3E%3Ctext x=%2710%27 y=%2790%27 font-size=%2716%27 font-family=%27sans-serif%27 fill=%27%23888%27 transform=%27rotate(-25 150 85)%27%3E' + encodeURIComponent(t) + '%3C/text%3E%3C/svg%3E")'; }
+function wmk() { const t = (R && R.wm || "visiteur") + " · CIBOO"; $("wm").style.backgroundImage = 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27300%27 height=%27170%27%3E%3Ctext x=%2710%27 y=%2790%27 font-size=%2716%27 font-family=%27sans-serif%27 fill=%27%23888%27 transform=%27rotate(-25 150 85)%27%3E' + encodeURIComponent(t) + '%3C/text%3E%3C/svg%3E")'; }
 const normq = x => String(x).normalize("NFD").replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, "").toLowerCase();
 function tocIdx(i) { let k = -1; (R.toc || []).forEach((c, n) => { if (c.p <= i) k = n; }); return k; }
 function chapterAt(i) { const T = R.toc || [], h = T.some(c => c.l === 1) ? T.filter(c => c.l === 1) : T; let t = ""; for (const c of h) if (c.p <= i) t = c.t; return t; }
@@ -306,7 +308,7 @@ function cartv() {
   const sub = it.reduce((s, b) => s + b.p * cart[b.id], 0);
   c.innerHTML = `<div class="card">${it.map(b => `<div class="line"><span>${esc(b.t)}<br><span class="mut">${fmt(b.p)}</span></span><span><button class="btn alt sm" data-q="${b.id}:-1">−</button> ${cart[b.id]} <button class="btn alt sm" data-q="${b.id}:1">+</button></span></div>`).join("")}</div>
 <h2>Livraison</h2><div class="card"><label for="nm">Nom complet</label><input id="nm" autocomplete="name" maxlength="80"><label for="tl">Téléphone</label><input id="tl" type="tel" autocomplete="tel" maxlength="30"><label for="vl">Ville ou zone</label><select id="vl">${S.cfg.zones.map(z => `<option value="${z.id}">${esc(z.name)} (${fmt(z.fee)})</option>`).join("")}</select><label for="ad">Adresse et repère</label><input id="ad" autocomplete="street-address" maxlength="200">
-<label for="pc">Code promo</label><input id="pc" placeholder="CIBA10" maxlength="30" value="${esc(promo.code)}"><p class="line"><span>Sous-total</span><b>${fmt(sub)}</b></p><p class="line"><span>Livraison</span><b id="lv"></b></p><p class="line"><span>Total</span><b id="tt"></b></p>
+<label for="pc">Code promo</label><input id="pc" placeholder="CIBOO10" maxlength="30" value="${esc(promo.code)}"><p class="line"><span>Sous-total</span><b>${fmt(sub)}</b></p><p class="line"><span>Livraison</span><b id="lv"></b></p><p class="line"><span>Total</span><b id="tt"></b></p>
 <button class="btn" style="width:100%;margin-top:10px" id="ord">Confirmer la commande</button><p class="mut">Paiement à la livraison ou par Mobile Money, selon votre choix lors de l'appel de confirmation.</p></div>`;
   const up = () => { const z = S.cfg.zones.find(x => x.id == $("vl").value) || { fee: 0 }, d = Math.round(sub * promo.pct / 100); $("lv").textContent = fmt(z.fee) + (d ? " · remise −" + fmt(d) : ""); $("tt").textContent = fmt(sub - d + z.fee); };
   up(); $("vl").onchange = up;
@@ -450,7 +452,7 @@ const dataUrl = f => new Promise((ok, ko) => { const x = new FileReader(); x.onl
 
 /* ---------- Administration ---------- */
 let AT = "dash", EB = null;
-const TT = [["dash", "Tableau de bord"], ["add", "Ajouter un livre"], ["edit", "Modifier un livre"], ["rem", "Retirer un livre"], ["pay", "Paiements"], ["ord", "Commandes"], ["liv", "Livraison"], ["stat", "Ventes et export"], ["promo", "Codes promo"], ["cli", "Clients"], ["log", "Journal"]];
+const TT = [["dash", "Tableau de bord"], ["add", "Ajouter un livre"], ["edit", "Modifier un livre"], ["rem", "Retirer un livre"], ["pay", "Paiements"], ["ord", "Commandes"], ["liv", "Livraison"], ["stat", "Ventes et export"], ["promo", "Codes promo"], ["cli", "Clients"], ["sb", "Sauvegarde"], ["log", "Journal"]];
 const TY = { free: "Gratuit", paid: "Numérique payant", phys: "Physique" };
 async function admv() {
   const a = $("adm");
@@ -463,7 +465,54 @@ const ATAB = {};
 ATAB.dash = async c => {
   const s = await api("/admin/summary");
   c.innerHTML = `${s.warn.map(w => `<p class="note" style="margin-bottom:8px">${esc(w)}</p>`).join("")}${s.pending ? `<p class="note" style="margin-bottom:8px">⏳ ${s.pending} paiement(s) à valider dans l'onglet Paiements.</p>` : ""}<div class="grid"><div class="card"><b>${s.books}</b><p class="mut">livres au catalogue (${s.hidden} retirés)</p></div><div class="card"><b>${s.free} · ${s.paid} · ${s.phys}</b><p class="mut">gratuits · numériques payants · physiques</p></div><div class="card"><b>${s.orders}</b><p class="mut">commandes physiques</p></div><div class="card"><b>${fmt(s.revenue)}</b><p class="mut">ventes confirmées</p></div><div class="card"><b>${s.users}</b><p class="mut">comptes clients</p></div></div>
-<h2>Sauvegarde</h2><p class="mut">Téléchargez régulièrement une copie complète de vos données.</p><a class="btn alt" href="/api/admin/backup" download>Télécharger une sauvegarde</a>`;
+<h2>Sauvegarde</h2><p class="mut">Téléchargez régulièrement une copie complète de vos données. Pour une copie automatique hors de Render, ouvrez l'onglet « Sauvegarde ».</p><a class="btn alt" href="/api/admin/backup" download>Télécharger une sauvegarde</a>`;
+};
+/* Attend que le service ait redémarré (après une restauration), puis recharge la page. */
+async function waitRestart() {
+  $("adm").innerHTML = '<div class="note">Restauration en cours : le site redémarre (environ 30 secondes). Cette page se rechargera toute seule. Ne la fermez pas.</div>';
+  const w = ms => new Promise(r => setTimeout(r, ms)), up = async () => { try { return (await fetch("/health", { cache: "no-store" })).ok; } catch { return false; } };
+  for (let k = 0; k < 12 && await up(); k++) await w(1500);              // d'abord, on attend l'arrêt de l'ancien service
+  for (let k = 0; k < 90; k++) { if (await up()) { await w(1200); location.reload(); return; } await w(2000); }
+  $("adm").innerHTML = '<div class="note">Le site met du temps à redémarrer. Rechargez cette page dans une minute.</div>';
+}
+ATAB.sb = async c => {
+  const i = await api("/admin/supabase");
+  const dh = t => t ? new Date(t).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+  const pl = (n, w) => n + " " + w + (n > 1 ? "s" : ""), cn = o => o ? [pl(o.clients, "client"), pl(o.livres, "livre"), pl(o.paiements, "paiement"), pl(o.commandes, "commande")].join(" · ") : "";
+  const sz = n => n ? (n >= 1048576 ? (n / 1048576).toFixed(1) + " Mo" : Math.max(1, Math.round(n / 1024)) + " Ko") : "";
+  let h = `<div class="card"><h2 style="margin-top:0">Copie de sécurité sur Supabase</h2>`;
+  if (!i.configured) {
+    h += (i.problem ? `<p class="err">${esc(i.problem)}</p>` : "") + `<p>Cette protection n'est pas encore activée. Elle garde une copie de vos livres, clients, paiements et commandes dans votre compte Supabase, et la remet automatiquement si le disque de Render est perdu ou remplacé.</p>
+<ol class="mut" style="padding-left:20px;line-height:1.7"><li>Dans Supabase : <b>Project Settings</b>, puis <b>API Keys</b> : copiez l'adresse du projet (« Project URL ») et la clé <b>secrète</b> (« Secret key », elle commence par <b>sb_secret_</b>).</li><li>Dans Render : votre service, puis <b>Environment</b> : ajoutez <b>SUPABASE_URL</b> et <b>SUPABASE_SECRET_KEY</b> avec ces deux valeurs.</li><li>Enregistrez : Render redémarre le site, et cet onglet affiche l'état de la protection.</li></ol><p class="mut">Ne donnez jamais cette clé à personne (ni dans un message, ni sur GitHub).</p></div>`;
+    c.innerHTML = h; return;
+  }
+  h += `<p>${i.restoreError || i.conflict ? "🔴 <b>Sauvegardes automatiques suspendues</b>" : i.error || i.remoteError ? "🟠 <b>Dernier envoi en erreur</b>" : i.dirty ? "🟡 <b>Actif</b> : des changements seront envoyés dans quelques minutes" : "🟢 <b>Actif</b> : tout est sauvegardé"}</p>
+<p class="mut">Projet : ${esc(i.host)} · espace privé : ${esc(i.bucket)}<br>Dernier envoi réussi (depuis le dernier démarrage) : ${i.lastOk ? dh(i.lastOk) : "aucun pour l'instant"}<br>Copie sur Supabase : ${i.remote ? dh(i.remote.at) + " · " + esc(cn(i.remote.counts)) : "aucune"}<br>Données de ce site : ${esc(cn(i.local))}</p>`;
+  if (i.restoreError) h += `<p class="err">${esc(i.restoreError)}</p><p>Au démarrage, ce site n'a pas pu récupérer vos données. Rien n'a été écrasé sur Supabase. Choisissez ci-dessous la copie à remettre (en général « La plus récente »).</p>`;
+  if (i.conflict) h += `<p class="err">Supabase contient déjà la sauvegarde d'une <b>autre</b> base (du ${esc(dh(i.conflict.at))} : ${esc(cn(i.conflict.counts))}). Rien n'a été écrasé.</p><p>Si c'est votre ancien site (vos vraies données), choisissez <b>Restaurer</b> ci-dessous. Si ce site-ci est le bon, choisissez <b>Remplacer la sauvegarde par ce site</b> (l'ancienne copie est gardée dans « copies de sécurité »).</p>`;
+  if (i.error && !i.restoreError && !i.conflict) h += `<p class="err">${esc(i.error)}</p>`;
+  if (i.remoteError) h += `<p class="err">Lecture de Supabase impossible : ${esc(i.remoteError)}</p>`;
+  if (i.restored) h += `<p class="note">${esc(i.restored)}</p>`;
+  h += `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-sb="backup">Sauvegarder maintenant</button><button class="btn alt" data-sb="test">Tester la connexion</button>${i.conflict ? '<button class="btn alt" data-sb="over">Remplacer la sauvegarde par ce site</button>' : ""}</div></div>`;
+  const row = (f, label, s, u) => `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px"><span>${esc(label)}<br><span class="mut">${esc(dh(u))}${s ? " · " + sz(s) : ""}</span></span><button class="btn alt sm" data-sb="restore" data-f="${esc(f)}" data-l="${esc(label)}">Restaurer</button></div>`;
+  h += `<h2>Restaurer une copie</h2><p class="mut">Remplace les données de ce site par celles de la copie choisie. Une copie de sécurité de l'état actuel est gardée avant, et le site redémarre (environ 30 secondes).</p>`;
+  if (i.remote) h += row("latest", "La plus récente", 0, i.remote.at);
+  h += (i.history || []).map(x => row(x.file, "Fin de journée du " + x.file.slice(-10).split("-").reverse().join("/"), x.size, x.updated)).join("");
+  if (!i.remote && !(i.history || []).length) h += '<p class="mut">Aucune copie pour le moment.</p>';
+  if ((i.safety || []).length) h += `<h2>Copies de sécurité</h2><p class="mut">Créées automatiquement juste avant une restauration ou un remplacement.</p>` + i.safety.map(x => row(x.file, "Copie de sécurité", x.size, x.updated)).join("");
+  h += '<p class="mut" style="margin-top:14px">Les copies sont envoyées quelques minutes après chaque modification, à l\'arrêt du service, et gardées 14 jours.</p>';
+  c.innerHTML = h;
+  c.onclick = async e => {
+    const b = e.target.closest("[data-sb]"); if (!b) return; const k = b.dataset.sb;
+    if (k === "test") { b.disabled = true; const r = await act(() => api("/admin/supabase/test", { method: "POST", body: {} })); b.disabled = false; if (r) toast("✔ Connexion à Supabase réussie (écriture et lecture)."); else ATAB.sb(c); }
+    else if (k === "backup") { b.disabled = true; const r = await act(() => api("/admin/supabase/backup", { method: "POST", body: {} })); b.disabled = false; if (r) { toast("✔ Sauvegarde envoyée."); } ATAB.sb(c); }
+    else if (k === "over") { if (prompt("Cela remplace la sauvegarde Supabase par les données de CE site.\nL'ancienne copie est gardée dans les copies de sécurité.\n\nTapez REMPLACER pour confirmer :") !== "REMPLACER") return; const r = await act(() => api("/admin/supabase/overwrite", { method: "POST", body: { confirm: "REMPLACER" } })); if (r) toast("✔ Sauvegarde remplacée."); ATAB.sb(c); }
+    else if (k === "restore") {
+      if (prompt("Restaurer « " + b.dataset.l + " » ?\n\nLes données actuelles de ce site seront remplacées (une copie de sécurité est gardée) et le site redémarre.\n\nTapez RESTAURER pour confirmer :") !== "RESTAURER") return;
+      b.disabled = true; const r = await act(() => api("/admin/supabase/restore", { method: "POST", body: { file: b.dataset.f, confirm: "RESTAURER" } })); b.disabled = false;
+      if (r) waitRestart();
+    }
+  };
 };
 ATAB.add = async c => {
   c.innerHTML = `<div class="card"><div class="row2"><div><label for="ft">Titre</label><input id="ft" maxlength="150" dir="auto"></div><div><label for="fa">Auteur</label><input id="fa" maxlength="100" dir="auto"></div></div>
@@ -562,11 +611,11 @@ ATAB.log = async c => {
 
 /* ---------- Installation sur le téléphone et hors connexion ---------- */
 let dp = null; const sa = matchMedia("(display-mode: standalone)").matches || navigator.standalone, lgg = k => { try { return localStorage.getItem(k); } catch { return null; } };
-function bn(t, b) { if (sa || lgg("ciba-ix")) return; $("it").textContent = t; $("ib").style.display = b ? "inline-block" : "none"; $("ins").style.display = "block"; }
-addEventListener("beforeinstallprompt", e => { e.preventDefault(); dp = e; bn("Installez Ciba Édition sur votre téléphone pour l'ouvrir en un geste.", true); });
+function bn(t, b) { if (sa || lgg("ciboo-ix")) return; $("it").textContent = t; $("ib").style.display = b ? "inline-block" : "none"; $("ins").style.display = "block"; }
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); dp = e; bn("Installez CIBOO sur votre téléphone pour l'ouvrir en un geste.", true); });
 $("ib").onclick = async () => { if (dp) { dp.prompt(); await dp.userChoice; dp = null; $("ins").style.display = "none"; } };
-$("ix").onclick = () => { $("ins").style.display = "none"; try { localStorage.setItem("ciba-ix", "1"); } catch { } };
-if (/iphone|ipad|ipod/i.test(navigator.userAgent)) bn("Sur iPhone : touchez Partager, puis « Sur l'écran d'accueil » pour installer Ciba Édition.", false);
+$("ix").onclick = () => { $("ins").style.display = "none"; try { localStorage.setItem("ciboo-ix", "1"); } catch { } };
+if (/iphone|ipad|ipod/i.test(navigator.userAgent)) bn("Sur iPhone : touchez Partager, puis « Sur l'écran d'accueil » pour installer CIBOO.", false);
 const offBar = () => $("off").style.display = navigator.onLine ? "none" : "block"; addEventListener("online", () => { offBar(); if (S.off) boot(); }); addEventListener("offline", offBar); offBar();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
 

@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Ciboo</title>
-<meta name="description" content="Ciboo : livres numériques à lire en ligne, guides, manuels de formation et livres papier livrés chez vous.">
+<title>CIBOO</title>
+<meta name="description" content="CIBOO : livres numériques à lire en ligne, guides, manuels de formation et livres papier livrés chez vous.">
 <meta name="theme-color" content="#7a2e1d">
-<meta property="og:title" content="Ciboo"><meta property="og:description" content="Lisez en ligne, commandez en livraison.">
-<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ciboo"><meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta property="og:title" content="CIBOO"><meta property="og:description" content="Lisez en ligne, commandez en livraison.">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="CIBOO"><meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-192.png"><link rel="icon" href="/icon-192.png">
 <style>
 :root{--bg:#fbf7ef;--card:#fff;--tx:#231f2b;--mut:#6a6475;--pr:#7a2e1d;--prt:#fff;--pr2:#f6e6df;--ac:#d9a21b;--bd:#e6dfd0;--ok:#1d7a4a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -39,7 +39,7 @@ label{display:block;margin:10px 0 4px;font-weight:600;font-size:14px}
 .note{background:var(--pr2);border-left:4px solid var(--ac);padding:10px 12px;border-radius:8px;font-size:14px}
 .ov{position:fixed;inset:0;background:var(--bg);z-index:20;display:none;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 .ov.on{display:flex}.ov .bar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--bd)}
-#wm{position:fixed;inset:0;pointer-events:none;opacity:.07;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='160'%3E%3Ctext x='10' y='90' font-size='18' font-family='sans-serif' fill='%23888' transform='rotate(-25 130 80)'%3ECiboo %C3%89dition %C2%B7 lecture en ligne%3C/text%3E%3C/svg%3E")}
+#wm{position:fixed;inset:0;pointer-events:none;opacity:.07;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='160'%3E%3Ctext x='10' y='90' font-size='18' font-family='sans-serif' fill='%23888' transform='rotate(-25 130 80)'%3ECIBOO %C2%B7 lecture en ligne%3C/text%3E%3C/svg%3E")}
 .lock{text-align:center;padding:24px 10px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;z-index:40;font-size:14px}
 .dz{display:block;border:2px dashed var(--pr);border-radius:14px;padding:28px 14px;text-align:center;font-weight:700;color:var(--pr);background:var(--pr2);cursor:pointer;margin:10px 0}.dz.on{background:var(--card)}
@@ -84,7 +84,7 @@ textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;b
 .seg{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px}.seg button{border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:10px;padding:8px 12px;font:inherit;font-size:14px;cursor:pointer}.seg button.on{background:var(--pr);color:var(--prt);border-color:var(--pr)}
 </style></head>
 <body>
-<header><div class="top"><div class="brand">Ciboo<small>Livres, guides et manuels de formation</small></div><nav id="nav"></nav></div></header>
+<header><div class="top"><div class="brand">CIBOO<small>Livres, guides et manuels de formation</small></div><nav id="nav"></nav></div></header>
 <main>
 <div id="ins" class="note" style="display:none;margin-bottom:10px"><span id="it"></span> <button class="btn sm" id="ib" style="margin-left:6px">Installer</button> <button class="btn alt sm" id="ix">Plus tard</button></div>
 <div id="off" class="note" style="display:none;margin-bottom:10px">Vous êtes hors connexion. Les livres enregistrés se lisent dans Bibliothèque ; le reste demande une connexion.</div>
@@ -106,7 +106,7 @@ textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;b
 <section class="view" id="acc"></section>
 <section class="view" id="adm"></section>
 <section class="view" id="info"><h1>Infos pratiques</h1>
-<details open><summary>À propos de Ciboo</summary><p>Ciboo propose des livres, guides et manuels de formation : en version numérique à lire sur le site, et en version papier livrée chez vous.</p></details>
+<details open><summary>À propos de CIBOO</summary><p>CIBOO propose des livres, guides et manuels de formation : en version numérique à lire sur le site, et en version papier livrée chez vous.</p></details>
 <details><summary>Contact</summary><p>Une question ? Écrivez-nous, nous répondons rapidement.</p><a class="btn" href="https://wa.me/221700000000" target="_blank" rel="noopener">Écrire sur WhatsApp</a></details>
 <details><summary>Comment payer un livre numérique ?</summary><p>Cliquez sur Acheter, envoyez le montant par Wave ou Orange Money au numéro affiché, puis saisissez le numéro de transaction reçu par SMS. Votre livre s'ouvre dès que le paiement est confirmé par notre équipe.</p></details>
 <details><summary>Conditions de vente</summary><p>Prix en FCFA. Un livre numérique acheté se lit en ligne depuis votre compte, sans téléchargement ; l'accès est personnel et non cessible. Les livres physiques sont livrés selon la ville choisie, avec confirmation par appel.</p></details>
