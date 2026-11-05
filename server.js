@@ -81,7 +81,7 @@ CREATE INDEX IF NOT EXISTS ord_user ON orders(user_id);
   if (!cols.includes("toc")) db.exec("ALTER TABLE books ADD COLUMN toc TEXT");
   if (!cols.includes("words")) db.exec("ALTER TABLE books ADD COLUMN words INTEGER NOT NULL DEFAULT 0");
 }
-const CATS = ["Roman", "Guide", "Manuel de formation", "Développement personnel", "Contes"];
+const CATS = ["Roman", "Guide", "Manuel de formation", "Développement personnel", "Autres"];
 const CATS_AR = ["Religion et spiritualité", "Langue arabe", "Histoire et civilisation", "Littérature et poésie", "Sciences et savoirs", "Enfants et contes", "Éducation et formation"];
 const catOk = (lang, cat) => (lang === "ar" ? CATS_AR : CATS).includes(cat);
 const DEF_WAVE = "77 000 00 00", DEF_OM = "77 000 00 01";
